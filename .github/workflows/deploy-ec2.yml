@@ -10,6 +10,9 @@ concurrency:
   group: deploy-ec2
   cancel-in-progress: true
 
+env:
+  EC2_HOST_STATIC: "13.220.97.203"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -66,7 +69,9 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${EC2_PORT:-22}"
-          scp -P "$PORT" -o StrictHostKeyChecking=no /tmp/release.tar.gz "${EC2_USER}@${EC2_HOST}:/tmp/customer_support_agent_release.tar.gz"
+          HOST="${EC2_HOST:-$EC2_HOST_STATIC}"
+          echo "Uploading archive to ${EC2_USER}@${HOST}:${PORT}"
+          scp -P "$PORT" -o StrictHostKeyChecking=no /tmp/release.tar.gz "${EC2_USER}@${HOST}:/tmp/customer_support_agent_release.tar.gz"
 
       - name: Deploy on EC2
         env:
@@ -77,9 +82,11 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${EC2_PORT:-22}"
+          HOST="${EC2_HOST:-$EC2_HOST_STATIC}"
           APP_DIR="${EC2_APP_DIR:-/opt/customer_support_agent}"
 
-          ssh -p "$PORT" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" \
+          echo "Deploying to ${EC2_USER}@${HOST}:${PORT}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=no "${EC2_USER}@${HOST}" \
             "APP_DIR='${APP_DIR}' bash -s" <<'EOF_REMOTE'
           set -euo pipefail
 
@@ -95,7 +102,7 @@ jobs:
             exit 1
           fi
 
-          docker compose up -d --build --remove-orphans
+          docker compose up -d --build --force-recreate --remove-orphans
           docker compose ps
           HEALTH_URL="http://127.0.0.1:8000/health"
           HEALTH_WAIT_SECONDS=60

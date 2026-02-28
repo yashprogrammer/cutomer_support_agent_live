@@ -13,6 +13,11 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
+    networks:
+      default:
+        aliases:
+          - api
+          - support-copilot-api
     volumes:
       - ./data:/app/data
       - ./knowledge_base:/app/knowledge_base
@@ -26,10 +31,12 @@ services:
     env_file:
       - .env
     environment:
-      - API_BASE_URL=http://support-copilot-api:8000
+      - API_BASE_URL=http://api:8000
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - default
     volumes:
       - ./data:/app/data
       - ./knowledge_base:/app/knowledge_base

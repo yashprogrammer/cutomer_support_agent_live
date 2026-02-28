@@ -97,5 +97,27 @@ jobs:
 
           docker compose up -d --build --remove-orphans
           docker compose ps
-          curl -fsS http://127.0.0.1:8000/health
+          HEALTH_URL="http://127.0.0.1:8000/health"
+          HEALTH_WAIT_SECONDS=60
+          HEALTH_INTERVAL_SECONDS=2
+          MAX_ATTEMPTS=$((HEALTH_WAIT_SECONDS / HEALTH_INTERVAL_SECONDS))
+
+          echo "Waiting for API health endpoint: $HEALTH_URL"
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null; then
+              echo "API healthy (attempt $attempt/$MAX_ATTEMPTS)"
+              break
+            fi
+
+            if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
+              echo "ERROR: API health check failed after ${HEALTH_WAIT_SECONDS}s"
+              docker compose ps
+              docker compose logs --tail=200 api
+              exit 1
+            fi
+
+            sleep "$HEALTH_INTERVAL_SECONDS"
+          done
+
+          curl -fsS "$HEALTH_URL"
           EOF_REMOTE

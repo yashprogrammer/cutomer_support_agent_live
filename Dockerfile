@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --upgrade pip uv
 
 COPY pyproject.toml uv.lock /app/
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-cache
 
 COPY . /app
 

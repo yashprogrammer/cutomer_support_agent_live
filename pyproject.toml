@@ -26,7 +26,7 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
+torch = { index = "pytorch-cpu" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

@@ -1,0 +1,31 @@
+[project]
+name = "customer-support-agent"
+version = "0.1.0"
+description = "AI copilot for support agents with FastAPI, LangChain, Mem0, and ChromaDB"
+readme = "Plan.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic-settings",
+  "python-dotenv",
+  "langchain",
+  "langchain-core",
+  "langchain-groq",
+  "langchain-text-splitters",
+  "mem0ai",
+  "chromadb",
+  "streamlit",
+  "requests",
+  "email-validator",
+  "sentence-transformers",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+  "playwright>=1.58.0",
+  "pytest",
+]

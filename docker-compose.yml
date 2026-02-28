@@ -1,0 +1,28 @@
+services:
+  api:
+    build: .
+    container_name: support-copilot-api
+    command: uv run python main.py
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./knowledge_base:/app/knowledge_base
+
+  dashboard:
+    build: .
+    container_name: support-copilot-dashboard
+    command: uv run streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
+    volumes:
+      - ./data:/app/data
+      - ./knowledge_base:/app/knowledge_base

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     google_api_key: str = ""
+    google_embedding_model: str = "models/text-embedding-004"
 
     workspace_dir: Path = Path(__file__).resolve().parents[2]
     data_dir: Path = Path("data")

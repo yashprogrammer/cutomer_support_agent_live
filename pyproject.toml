@@ -18,6 +18,7 @@ dependencies = [
   "streamlit",
   "requests",
   "email-validator",
+  "google-genai",
   "sentence-transformers",
   "torch",
 ]

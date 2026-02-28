@@ -38,7 +38,7 @@ class CustomerMemoryStore:
                 "provider": "gemini",
                 "config": {
                     "api_key": settings.google_api_key,
-                    "model": "models/embedding-001",
+                    "model": settings.google_embedding_model,
                 },
             }
 
@@ -153,4 +153,3 @@ class CustomerMemoryStore:
                 items.append({"memory": str(entry), "score": None, "metadata": {}})
 
         return items
-

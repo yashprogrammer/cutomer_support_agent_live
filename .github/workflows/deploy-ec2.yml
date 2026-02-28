@@ -69,9 +69,12 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${EC2_PORT:-22}"
-          HOST="${EC2_HOST:-$EC2_HOST_STATIC}"
+          HOST="${EC2_HOST_STATIC:-$EC2_HOST}"
           echo "Uploading archive to ${EC2_USER}@${HOST}:${PORT}"
-          scp -P "$PORT" -o StrictHostKeyChecking=no /tmp/release.tar.gz "${EC2_USER}@${HOST}:/tmp/customer_support_agent_release.tar.gz"
+          scp -P "$PORT" \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=20 \
+            /tmp/release.tar.gz "${EC2_USER}@${HOST}:/tmp/customer_support_agent_release.tar.gz"
 
       - name: Deploy on EC2
         env:
@@ -82,11 +85,14 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${EC2_PORT:-22}"
-          HOST="${EC2_HOST:-$EC2_HOST_STATIC}"
+          HOST="${EC2_HOST_STATIC:-$EC2_HOST}"
           APP_DIR="${EC2_APP_DIR:-/opt/customer_support_agent}"
 
           echo "Deploying to ${EC2_USER}@${HOST}:${PORT}"
-          ssh -p "$PORT" -o StrictHostKeyChecking=no "${EC2_USER}@${HOST}" \
+          ssh -p "$PORT" \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=20 \
+            "${EC2_USER}@${HOST}" \
             "APP_DIR='${APP_DIR}' bash -s" <<'EOF_REMOTE'
           set -euo pipefail
 

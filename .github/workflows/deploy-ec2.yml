@@ -1,0 +1,104 @@
+name: Deploy to EC2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest -q
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inject .env from secret (optional)
+        if: ${{ secrets.EC2_ENV_FILE != '' }}
+        run: |
+          printf "%s" "${{ secrets.EC2_ENV_FILE }}" > .env
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf "%s" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Package release archive
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='artifacts' \
+            -czf release.tar.gz .
+
+      - name: Upload archive to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_PORT: ${{ secrets.EC2_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${EC2_PORT:-22}"
+          scp -P "$PORT" -o StrictHostKeyChecking=no release.tar.gz "${EC2_USER}@${EC2_HOST}:/tmp/customer_support_agent_release.tar.gz"
+
+      - name: Deploy on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_PORT: ${{ secrets.EC2_PORT }}
+          EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
+        run: |
+          set -euo pipefail
+          PORT="${EC2_PORT:-22}"
+          APP_DIR="${EC2_APP_DIR:-/opt/customer_support_agent}"
+
+          ssh -p "$PORT" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" \
+            "APP_DIR='${APP_DIR}' bash -s" <<'EOF_REMOTE'
+          set -euo pipefail
+
+          mkdir -p "$APP_DIR"
+          tar -xzf /tmp/customer_support_agent_release.tar.gz -C "$APP_DIR"
+          rm -f /tmp/customer_support_agent_release.tar.gz
+
+          cd "$APP_DIR"
+
+          if [ ! -f .env ]; then
+            echo "ERROR: .env missing in $APP_DIR"
+            echo "Create it once on server or set EC2_ENV_FILE secret."
+            exit 1
+          fi
+
+          docker compose up -d --build --remove-orphans
+          docker compose ps
+          curl -fsS http://127.0.0.1:8000/health
+          EOF_REMOTE

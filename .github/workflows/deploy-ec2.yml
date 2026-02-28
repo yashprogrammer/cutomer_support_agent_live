@@ -71,10 +71,26 @@ jobs:
           PORT="${EC2_PORT:-22}"
           HOST="${EC2_HOST_STATIC:-$EC2_HOST}"
           echo "Uploading archive to ${EC2_USER}@${HOST}:${PORT}"
-          scp -P "$PORT" \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=20 \
-            /tmp/release.tar.gz "${EC2_USER}@${HOST}:/tmp/customer_support_agent_release.tar.gz"
+          if ! timeout 10 bash -c "cat < /dev/null > /dev/tcp/${HOST}/${PORT}"; then
+            echo "ERROR: Cannot reach ${HOST}:${PORT} from GitHub runner."
+            echo "Check EC2 Security Group/NACL/route table and SSH service."
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            if scp -P "$PORT" \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              /tmp/release.tar.gz "${EC2_USER}@${HOST}:/tmp/customer_support_agent_release.tar.gz"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "ERROR: scp failed after ${attempt} attempts."
+              exit 1
+            fi
+            echo "scp attempt ${attempt} failed, retrying..."
+            sleep $((attempt * 5))
+          done
 
       - name: Deploy on EC2
         env:
@@ -89,11 +105,18 @@ jobs:
           APP_DIR="${EC2_APP_DIR:-/opt/customer_support_agent}"
 
           echo "Deploying to ${EC2_USER}@${HOST}:${PORT}"
-          ssh -p "$PORT" \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=20 \
-            "${EC2_USER}@${HOST}" \
-            "APP_DIR='${APP_DIR}' bash -s" <<'EOF_REMOTE'
+          if ! timeout 10 bash -c "cat < /dev/null > /dev/tcp/${HOST}/${PORT}"; then
+            echo "ERROR: Cannot reach ${HOST}:${PORT} from GitHub runner."
+            echo "Check EC2 Security Group/NACL/route table and SSH service."
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            if ssh -p "$PORT" \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              "${EC2_USER}@${HOST}" \
+              "APP_DIR='${APP_DIR}' bash -s" <<'EOF_REMOTE'
           set -euo pipefail
 
           mkdir -p "$APP_DIR"
@@ -134,3 +157,12 @@ jobs:
 
           curl -fsS "$HEALTH_URL"
           EOF_REMOTE
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "ERROR: ssh deploy failed after ${attempt} attempts."
+              exit 1
+            fi
+            echo "ssh attempt ${attempt} failed, retrying..."
+            sleep $((attempt * 5))
+          done

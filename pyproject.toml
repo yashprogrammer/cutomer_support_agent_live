@@ -19,10 +19,19 @@ dependencies = [
   "requests",
   "email-validator",
   "sentence-transformers",
+  "torch",
 ]
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [

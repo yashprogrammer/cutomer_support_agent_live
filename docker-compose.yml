@@ -2,11 +2,17 @@ services:
   api:
     build: .
     container_name: support-copilot-api
-    command: uv run python main.py
+    command: .venv/bin/python main.py
     ports:
       - "8000:8000"
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
     volumes:
       - ./data:/app/data
       - ./knowledge_base:/app/knowledge_base
@@ -14,15 +20,16 @@ services:
   dashboard:
     build: .
     container_name: support-copilot-dashboard
-    command: uv run streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+    command: .venv/bin/streamlit run app.py --server.address 0.0.0.0 --server.port 8501
     ports:
       - "8501:8501"
     env_file:
       - .env
     environment:
-      - API_BASE_URL=http://api:8000
+      - API_BASE_URL=http://support-copilot-api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
       - ./knowledge_base:/app/knowledge_base

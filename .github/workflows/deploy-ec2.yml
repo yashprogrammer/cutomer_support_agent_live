@@ -119,7 +119,12 @@ jobs:
               "APP_DIR='${APP_DIR}' bash -s" <<'EOF_REMOTE'; then
           set -euo pipefail
 
-          mkdir -p "$APP_DIR"
+          if ! mkdir -p "$APP_DIR" 2>/dev/null; then
+            APP_DIR="$HOME/customer_support_agent"
+            mkdir -p "$APP_DIR"
+            echo "APP_DIR not writable, using fallback: $APP_DIR"
+          fi
+
           tar -xzf /tmp/customer_support_agent_release.tar.gz -C "$APP_DIR"
 
           cd "$APP_DIR"
@@ -130,16 +135,38 @@ jobs:
             exit 1
           fi
 
-          echo "Reclaiming disk space before build..."
-          docker system df || true
-          docker compose down --remove-orphans || true
-          docker builder prune -af || true
-          docker image prune -af || true
-          docker container prune -f || true
-          docker system df || true
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "Docker not found. Installing Docker..."
+            if command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y docker.io docker-compose-plugin
+            else
+              echo "ERROR: Unsupported package manager; install Docker manually."
+              exit 1
+            fi
+          fi
 
-          docker compose up -d --build --force-recreate --remove-orphans
-          docker compose ps
+          sudo systemctl enable --now docker || true
+
+          if sudo docker compose version >/dev/null 2>&1; then
+            DOCKER_COMPOSE_CMD="sudo docker compose"
+          elif command -v docker-compose >/dev/null 2>&1; then
+            DOCKER_COMPOSE_CMD="sudo docker-compose"
+          else
+            echo "ERROR: Docker Compose is not available."
+            exit 1
+          fi
+
+          echo "Reclaiming disk space before build..."
+          sudo docker system df || true
+          $DOCKER_COMPOSE_CMD down --remove-orphans || true
+          sudo docker builder prune -af || true
+          sudo docker image prune -af || true
+          sudo docker container prune -f || true
+          sudo docker system df || true
+
+          $DOCKER_COMPOSE_CMD up -d --build --force-recreate --remove-orphans
+          $DOCKER_COMPOSE_CMD ps
           HEALTH_URL="http://127.0.0.1:8000/health"
           HEALTH_WAIT_SECONDS=60
           HEALTH_INTERVAL_SECONDS=2
@@ -154,8 +181,8 @@ jobs:
 
             if [ "$health_attempt" -eq "$MAX_ATTEMPTS" ]; then
               echo "ERROR: API health check failed after ${HEALTH_WAIT_SECONDS}s"
-              docker compose ps
-              docker compose logs --tail=200 api
+              $DOCKER_COMPOSE_CMD ps
+              $DOCKER_COMPOSE_CMD logs --tail=200 api
               exit 1
             fi
 

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     google_api_key: str = ""
-    google_embedding_model: str = "models/text-embedding-004"
+    google_embedding_model: str = "gemini-embedding-001"
     enable_local_embeddings: bool = False
 
     workspace_dir: Path = Path(__file__).resolve().parents[2]
@@ -62,6 +62,30 @@ class Settings(BaseSettings):
     @property
     def knowledge_base_path(self) -> Path:
         return self.resolve(self.knowledge_base_dir)
+
+    @property
+    def effective_google_embedding_model(self) -> str:
+        """
+        Normalize and auto-upgrade legacy embedding model IDs to a supported Gemini model.
+        """
+        model = (self.google_embedding_model or "").strip()
+        if not model:
+            return "gemini-embedding-001"
+
+        if model.startswith("models/"):
+            model = model[len("models/") :]
+
+        deprecated_aliases = {
+            "text-embedding-004",
+            "embedding-001",
+            "embedding-gecko-001",
+            "gemini-embedding-exp",
+            "gemini-embedding-exp-03-07",
+        }
+        if model in deprecated_aliases:
+            return "gemini-embedding-001"
+
+        return model
 
 @lru_cache
 def get_settings() -> Settings:

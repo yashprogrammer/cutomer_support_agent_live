@@ -33,7 +33,7 @@ class KnowledgeBaseService:
             os.environ.setdefault("GOOGLE_API_KEY", self._settings.google_api_key)
             try:
                 return embedding_functions.GoogleGenaiEmbeddingFunction(
-                    model_name=self._settings.google_embedding_model,
+                    model_name=self._settings.effective_google_embedding_model,
                 )
             except Exception as exc:
                 raise RuntimeError(
@@ -114,4 +114,3 @@ class KnowledgeBaseService:
             )
 
         return combined
-

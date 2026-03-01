@@ -38,7 +38,7 @@ class CustomerMemoryStore:
                 "provider": "gemini",
                 "config": {
                     "api_key": settings.google_api_key,
-                    "model": settings.google_embedding_model,
+                    "model": settings.effective_google_embedding_model,
                 },
             }
 

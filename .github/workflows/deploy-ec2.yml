@@ -121,7 +121,6 @@ jobs:
 
           mkdir -p "$APP_DIR"
           tar -xzf /tmp/customer_support_agent_release.tar.gz -C "$APP_DIR"
-          rm -f /tmp/customer_support_agent_release.tar.gz
 
           cd "$APP_DIR"
 
@@ -130,6 +129,14 @@ jobs:
             echo "Create it once on server or set EC2_ENV_FILE secret."
             exit 1
           fi
+
+          echo "Reclaiming disk space before build..."
+          docker system df || true
+          docker compose down --remove-orphans || true
+          docker builder prune -af || true
+          docker image prune -af || true
+          docker container prune -f || true
+          docker system df || true
 
           docker compose up -d --build --force-recreate --remove-orphans
           docker compose ps
@@ -156,6 +163,7 @@ jobs:
           done
 
           curl -fsS "$HEALTH_URL"
+          rm -f /tmp/customer_support_agent_release.tar.gz
           EOF_REMOTE
               break
             fi

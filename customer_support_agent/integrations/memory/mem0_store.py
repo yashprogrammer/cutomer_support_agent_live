@@ -50,13 +50,19 @@ class CustomerMemoryStore:
                 },
             }
 
-        else:
+        elif settings.enable_local_embeddings:
             config["embedder"] = {
                 "provider": "huggingface",
                 "config": {
                     "model": "all-MiniLM-L6-v2",
                 },
             }
+
+        else:
+            raise RuntimeError(
+                "No embedding provider configured for Mem0. Set GOOGLE_API_KEY (recommended) "
+                "or OPENAI_API_KEY. Set ENABLE_LOCAL_EMBEDDINGS=true to use local HuggingFace embeddings."
+            )
 
         self._memory = Memory.from_config(config)
 

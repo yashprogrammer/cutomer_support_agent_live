@@ -19,20 +19,22 @@ dependencies = [
   "requests",
   "email-validator",
   "google-genai",
-  "sentence-transformers",
-  "torch",
+  # Optional local embedding stack (disabled to keep EC2 image size low):
+  # "sentence-transformers",
+  # "torch",
 ]
 
 [tool.uv]
 package = false
 
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
+# Optional torch CPU index (enable only if uncommenting "torch" above):
+# [tool.uv.sources]
+# torch = { index = "pytorch-cpu" }
+#
+# [[tool.uv.index]]
+# name = "pytorch-cpu"
+# url = "https://download.pytorch.org/whl/cpu"
+# explicit = true
 
 [dependency-groups]
 dev = [

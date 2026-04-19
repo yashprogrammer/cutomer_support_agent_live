@@ -66,6 +66,7 @@ dmypy.json
 # Logs
 *.log
 logs/
+evals/reports/
 
 # Jupyter
 .ipynb_checkpoints/

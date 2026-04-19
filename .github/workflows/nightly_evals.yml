@@ -1,0 +1,77 @@
+name: Nightly Evals
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  full-evals:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Install spaCy model
+        run: uv run python -m spacy download en_core_web_sm
+
+      - name: Run full eval suite
+        id: full_eval
+        continue-on-error: true
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run pytest -m full_eval evals/test_full_eval.py -q
+
+      - name: Build eval report
+        if: always()
+        run: uv run python evals/run_eval_report.py
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-eval-report
+          path: |
+            evals/reports/latest.json
+            evals/reports/latest.md
+
+      - name: Comment on latest commit
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            let body = "Nightly eval report was not generated.";
+            if (fs.existsSync("evals/reports/latest.md")) {
+              body = fs.readFileSync("evals/reports/latest.md", "utf8")
+                .split("\n")
+                .slice(0, 18)
+                .join("\n");
+            }
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body,
+            });
+
+      - name: Fail workflow if eval suite failed
+        if: steps.full_eval.outcome == 'failure'
+        run: exit 1

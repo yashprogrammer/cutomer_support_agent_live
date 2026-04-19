@@ -16,6 +16,7 @@ RUN pip install --upgrade pip uv
 
 COPY pyproject.toml uv.lock /app/
 RUN uv sync --frozen --no-dev --no-cache
+RUN .venv/bin/python -m spacy download en_core_web_sm
 
 COPY . /app
 

@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     dashboard_api_url: str = "http://localhost:8000"
+    guardrails_enabled: bool = True
+    tracer_enabled: bool = True
+    tracer_dir: Path = Path("data/traces")
 
     def resolve(self, path: Path) -> Path:
         """Resolve relative paths against the project root."""
@@ -62,6 +65,10 @@ class Settings(BaseSettings):
     @property
     def knowledge_base_path(self) -> Path:
         return self.resolve(self.knowledge_base_dir)
+
+    @property
+    def tracer_dir_path(self) -> Path:
+        return self.resolve(self.tracer_dir)
 
     @property
     def effective_google_embedding_model(self) -> str:
@@ -101,5 +108,6 @@ def ensure_directories(settings: Settings | None = None) -> None:
         config.chroma_rag_path,
         config.chroma_mem0_path,
         config.knowledge_base_path,
+        config.tracer_dir_path,
     ):
         path.mkdir(parents=True, exist_ok=True)

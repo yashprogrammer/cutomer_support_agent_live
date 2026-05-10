@@ -20,8 +20,6 @@ dependencies = [
   "email-validator",
   "google-genai",
   "guardrails-ai>=0.5",
-  "presidio-analyzer>=2.2",
-  "presidio-anonymizer>=2.2",
   "spacy>=3.7",
   # Optional local embedding stack (disabled to keep EC2 image size low):
   # "sentence-transformers",

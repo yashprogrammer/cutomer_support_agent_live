@@ -30,6 +30,19 @@ jobs:
       - name: Install spaCy model
         run: uv run python -m spacy download en_core_web_sm
 
+      - name: Install guardrails hub validators
+        env:
+          GUARDRAILS_API_KEY: ${{ secrets.GUARDRAILS_API_KEY }}
+        run: |
+          if [ -n "$GUARDRAILS_API_KEY" ]; then
+            uv run guardrails configure --token=$GUARDRAILS_API_KEY --disable-metrics --disable-remote-inferencing
+            uv run guardrails hub install hub://guardrails/detect_pii
+            uv run guardrails hub install hub://guardrails/toxic_language
+            uv run guardrails hub install hub://tryolabs/restricttotopic
+          else
+            echo "GUARDRAILS_API_KEY secret not set; falling back to custom regex validators."
+          fi
+
       - name: Run full eval suite
         id: full_eval
         continue-on-error: true

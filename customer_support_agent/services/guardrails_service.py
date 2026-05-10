@@ -7,21 +7,175 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 
+from guardrails.validators import (
+    FailResult,
+    PassResult,
+    Validator,
+    register_validator,
+)
+
 from customer_support_agent.core.settings import Settings
 from customer_support_agent.observability.tracer import NoOpTracer, Tracer
 
 try:
-    from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
-    from presidio_analyzer.nlp_engine import NlpEngineProvider
-    from presidio_anonymizer import AnonymizerEngine
-    from presidio_anonymizer.entities import OperatorConfig
-except Exception:  # pragma: no cover - import safety for lightweight environments
-    AnalyzerEngine = None
-    AnonymizerEngine = None
-    NlpEngineProvider = None
-    OperatorConfig = None
-    Pattern = None
-    PatternRecognizer = None
+    from guardrails.hub import DetectPII as _HubDetectPII
+except Exception:  # pragma: no cover
+    _HubDetectPII = None
+
+try:
+    from guardrails.hub import ToxicLanguage as _HubToxicLanguage
+except Exception:  # pragma: no cover
+    _HubToxicLanguage = None
+
+try:
+    from guardrails.hub import RestrictToTopic as _HubRestrictToTopic
+except Exception:  # pragma: no cover
+    _HubRestrictToTopic = None
+
+
+_PII_REPLACEMENTS = {
+    "CARD_NUMBER": "<CARD_NUMBER>",
+    "ACCOUNT_NUMBER": "<ACCOUNT_NUMBER>",
+    "EMAIL_ADDRESS": "<EMAIL_ADDRESS>",
+    "PHONE_NUMBER": "<PHONE_NUMBER>",
+}
+
+# guardrails-ai DetectPII emits Presidio entity tokens (e.g. <CREDIT_CARD>),
+# but the rest of the system uses our own canonical token names. This map
+# rewrites DetectPII output and infers entity_types for the violation dict.
+_HUB_TOKEN_ALIASES = {
+    "<CREDIT_CARD>": ("<CARD_NUMBER>", "CARD_NUMBER"),
+    "<CARD_NUMBER>": ("<CARD_NUMBER>", "CARD_NUMBER"),
+    "<EMAIL_ADDRESS>": ("<EMAIL_ADDRESS>", "EMAIL_ADDRESS"),
+    "<PHONE_NUMBER>": ("<PHONE_NUMBER>", "PHONE_NUMBER"),
+    "<US_PHONE_NUMBER>": ("<PHONE_NUMBER>", "PHONE_NUMBER"),
+    "<ACCOUNT_NUMBER>": ("<ACCOUNT_NUMBER>", "ACCOUNT_NUMBER"),
+}
+
+
+def _normalize_pii_tokens(text: str) -> tuple[str, list[str]]:
+    """Rewrite hub-style PII tokens to our canonical tokens and report entities."""
+    normalized = text
+    seen: list[str] = []
+    for hub_token, (canonical_token, entity) in _HUB_TOKEN_ALIASES.items():
+        if hub_token in normalized:
+            seen.append(entity)
+            if hub_token != canonical_token:
+                normalized = normalized.replace(hub_token, canonical_token)
+    return normalized, seen
+
+
+@register_validator(name="csa/account-number-redact", data_type="string")
+class AccountNumberValidator(Validator):
+    PATTERN = re.compile(
+        r"(?:(?:account|a/c)(?: number| no\.?)?[:\s-]*)\b\d{8,18}\b",
+        flags=re.IGNORECASE,
+    )
+    DIGIT_RUN = re.compile(r"\d{8,18}")
+
+    def validate(self, value: Any, metadata: dict[str, Any]) -> Any:
+        text = str(value or "")
+        matches = list(self.PATTERN.finditer(text))
+        if not matches:
+            return PassResult()
+        fixed = self.PATTERN.sub(
+            lambda m: self.DIGIT_RUN.sub(_PII_REPLACEMENTS["ACCOUNT_NUMBER"], m.group(0)),
+            text,
+        )
+        return FailResult(
+            error_message="Detected bank account number(s).",
+            fix_value=fixed,
+            metadata={"entity_types": ["ACCOUNT_NUMBER"], "count": len(matches)},
+        )
+
+
+@register_validator(name="csa/regex-pii-fallback", data_type="string")
+class RegexPiiValidator(Validator):
+    PATTERNS: dict[str, re.Pattern[str]] = {
+        "CARD_NUMBER": re.compile(r"\b(?:\d[ -]?){13,19}\b"),
+        "EMAIL_ADDRESS": re.compile(
+            r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+            flags=re.IGNORECASE,
+        ),
+        "PHONE_NUMBER": re.compile(r"(?:(?:\+?\d{1,3}[\s-]?)?(?:\d[\s-]?){10,12})"),
+    }
+
+    def validate(self, value: Any, metadata: dict[str, Any]) -> Any:
+        text = str(value or "")
+        sanitized = text
+        entities: list[str] = []
+        total = 0
+        for entity_type, pattern in self.PATTERNS.items():
+            found = list(pattern.finditer(sanitized))
+            if not found:
+                continue
+            entities.append(entity_type)
+            total += len(found)
+            sanitized = pattern.sub(_PII_REPLACEMENTS[entity_type], sanitized)
+        if not entities:
+            return PassResult()
+        return FailResult(
+            error_message="Detected structured PII via regex.",
+            fix_value=sanitized,
+            metadata={"entity_types": entities, "count": total},
+        )
+
+
+@register_validator(name="csa/toxic-language-regex", data_type="string")
+class ToxicLanguageRegexValidator(Validator):
+    PATTERNS: list[re.Pattern[str]] = [
+        re.compile(p, flags=re.IGNORECASE)
+        for p in (
+            r"\bidiot\b",
+            r"\bmoron\b",
+            r"\bstupid\b",
+            r"\bshut up\b",
+            r"\bdamn you\b",
+            r"\bhell with you\b",
+            r"\bfool\b",
+        )
+    ]
+
+    def validate(self, value: Any, metadata: dict[str, Any]) -> Any:
+        text = str(value or "")
+        matches: list[str] = []
+        for pattern in self.PATTERNS:
+            matches.extend(m.group(0) for m in pattern.finditer(text))
+        if not matches:
+            return PassResult()
+        return FailResult(
+            error_message="Draft contains hostile or abusive language.",
+            metadata={"matches": sorted(set(matches))},
+        )
+
+
+@register_validator(name="csa/forbidden-promises", data_type="string")
+class ForbiddenPhrasesValidator(Validator):
+    PATTERNS: list[re.Pattern[str]] = [
+        re.compile(p, flags=re.IGNORECASE)
+        for p in (
+            r"\bguaranteed return\b",
+            r"\bguaranteed profit\b",
+            r"\bfree money\b",
+            r"\b100%\s+safe\b",
+            r"\brisk[- ]free\b",
+            r"\bzero[- ]risk\b",
+            r"\bcan(?:not|'t)? lose\b",
+            r"\bdouble your money\b",
+        )
+    ]
+
+    def validate(self, value: Any, metadata: dict[str, Any]) -> Any:
+        text = str(value or "")
+        matches: list[str] = []
+        for pattern in self.PATTERNS:
+            matches.extend(m.group(0) for m in pattern.finditer(text))
+        if not matches:
+            return PassResult()
+        return FailResult(
+            error_message="Draft makes forbidden financial guarantees or promises.",
+            metadata={"matches": sorted(set(matches))},
+        )
 
 
 @dataclass
@@ -98,61 +252,77 @@ class GuardrailsService:
         "weather",
         "write me",
     }
-    _TOXIC_PATTERNS = [
-        re.compile(pattern, flags=re.IGNORECASE)
-        for pattern in (
-            r"\bidiot\b",
-            r"\bmoron\b",
-            r"\bstupid\b",
-            r"\bshut up\b",
-            r"\bdamn you\b",
-            r"\bhell with you\b",
-            r"\bfool\b",
-        )
-    ]
-    _FORBIDDEN_PROMISE_PATTERNS = [
-        re.compile(pattern, flags=re.IGNORECASE)
-        for pattern in (
-            r"\bguaranteed return\b",
-            r"\bguaranteed profit\b",
-            r"\bfree money\b",
-            r"\b100%\s+safe\b",
-            r"\brisk[- ]free\b",
-            r"\bzero[- ]risk\b",
-            r"\bcan(?:not|'t)? lose\b",
-            r"\bdouble your money\b",
-        )
-    ]
-    _PII_PATTERNS = {
-        "CARD_NUMBER": re.compile(r"\b(?:\d[ -]?){13,19}\b"),
-        "ACCOUNT_NUMBER": re.compile(
-            r"(?:(?:account|a/c)(?: number| no\.?)?[:\s-]*)\b\d{8,18}\b",
-            flags=re.IGNORECASE,
-        ),
-        "EMAIL_ADDRESS": re.compile(
-            r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
-            flags=re.IGNORECASE,
-        ),
-        "PHONE_NUMBER": re.compile(
-            r"(?:(?:\+?\d{1,3}[\s-]?)?(?:\d[\s-]?){10,12})",
-            flags=re.IGNORECASE,
-        ),
-    }
-    _PII_REPLACEMENTS = {
-        "CARD_NUMBER": "<CARD_NUMBER>",
-        "ACCOUNT_NUMBER": "<ACCOUNT_NUMBER>",
-        "EMAIL_ADDRESS": "<EMAIL_ADDRESS>",
-        "PHONE_NUMBER": "<PHONE_NUMBER>",
-    }
 
     def __init__(self, settings: Settings, tracer: TracerLike | None = None):
         self._settings = settings
         self._enabled = settings.guardrails_enabled
         self._tracer = tracer or NoOpTracer()
         self._classifier_llm: ChatGroq | None = None
-        self._analyzer = None
-        self._anonymizer = None
-        self._setup_presidio()
+
+        self._pii_validators: list[Validator] = []
+        self._toxicity_validator: Validator | None = None
+        self._forbidden_validator: Validator | None = None
+        self._scope_validator: Validator | None = None
+        self._setup_validators()
+
+    def _setup_validators(self) -> None:
+        # Account-number validator runs FIRST so context-aware pattern
+        # ("account number 123...") captures digits before generic PII regexes
+        # can mis-classify them as phone numbers.
+        self._pii_validators.append(AccountNumberValidator(on_fail="fix"))
+
+        if _HubDetectPII is not None:
+            try:
+                self._pii_validators.append(
+                    _HubDetectPII(
+                        pii_entities=["EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD"],
+                        on_fail="fix",
+                    )
+                )
+            except Exception:
+                pass
+        if len(self._pii_validators) == 1:
+            self._pii_validators.append(RegexPiiValidator(on_fail="fix"))
+
+        if _HubToxicLanguage is not None:
+            try:
+                self._toxicity_validator = _HubToxicLanguage(
+                    threshold=0.5, validation_method="sentence", on_fail="noop"
+                )
+            except Exception:
+                self._toxicity_validator = None
+        if self._toxicity_validator is None:
+            self._toxicity_validator = ToxicLanguageRegexValidator(on_fail="noop")
+
+        self._forbidden_validator = ForbiddenPhrasesValidator(on_fail="noop")
+
+        if _HubRestrictToTopic is not None:
+            try:
+                self._scope_validator = _HubRestrictToTopic(
+                    valid_topics=[
+                        "banking",
+                        "account servicing",
+                        "atm",
+                        "card",
+                        "kyc",
+                        "fees and charges",
+                        "support ticket",
+                    ],
+                    invalid_topics=[
+                        "poetry",
+                        "creative writing",
+                        "weather",
+                        "recipes",
+                        "travel",
+                        "song",
+                        "code",
+                    ],
+                    disable_classifier=False,
+                    disable_llm=True,
+                    on_fail="noop",
+                )
+            except Exception:
+                self._scope_validator = None
 
     def check_input(self, text: str) -> GuardrailResult:
         if not self._enabled:
@@ -189,22 +359,26 @@ class GuardrailsService:
         sanitized_text, pii_violations = self.sanitize_text(text)
         violations = list(pii_violations)
 
-        toxic_matches = self._find_matches(self._TOXIC_PATTERNS, sanitized_text)
-        if toxic_matches:
+        toxic_result = self._toxicity_validator.validate(sanitized_text, {}) if self._toxicity_validator else PassResult()
+        if isinstance(toxic_result, FailResult):
+            metadata = toxic_result.metadata or {}
+            matches = metadata.get("matches") or [toxic_result.error_message]
             violations.append(
                 {
                     "type": "toxicity_violation",
-                    "matches": toxic_matches,
+                    "matches": list(matches),
                     "reason": "Draft contains hostile or abusive language.",
                 }
             )
 
-        promise_matches = self._find_matches(self._FORBIDDEN_PROMISE_PATTERNS, sanitized_text)
-        if promise_matches:
+        promise_result = self._forbidden_validator.validate(sanitized_text, {}) if self._forbidden_validator else PassResult()
+        if isinstance(promise_result, FailResult):
+            metadata = promise_result.metadata or {}
+            matches = metadata.get("matches") or []
             violations.append(
                 {
                     "type": "promise_violation",
-                    "matches": promise_matches,
+                    "matches": list(matches),
                     "reason": "Draft makes forbidden financial guarantees or promises.",
                 }
             )
@@ -226,123 +400,35 @@ class GuardrailsService:
             return source, []
 
         sanitized_text = source
+        all_entities: list[str] = []
+        total_count = 0
+        for validator in self._pii_validators:
+            result = validator.validate(sanitized_text, {})
+            if isinstance(result, FailResult):
+                if result.fix_value is not None:
+                    sanitized_text = str(result.fix_value)
+                metadata = result.metadata or {}
+                entity_types = list(metadata.get("entity_types") or [])
+                count = int(metadata.get("count") or 0)
+                if not entity_types:
+                    sanitized_text, inferred = _normalize_pii_tokens(sanitized_text)
+                    entity_types = inferred
+                    count = len(inferred)
+                else:
+                    sanitized_text, _ = _normalize_pii_tokens(sanitized_text)
+                all_entities.extend(entity_types)
+                total_count += count or len(entity_types)
+
         violations: list[dict[str, Any]] = []
-
-        presidio_entities: list[dict[str, Any]] = []
-        if self._analyzer and self._anonymizer and OperatorConfig is not None:
-            analyzer_results = self._analyzer.analyze(
-                text=source,
-                language="en",
-                entities=["EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD"],
-            )
-            if analyzer_results:
-                operators = {
-                    "EMAIL_ADDRESS": OperatorConfig(
-                        "replace", {"new_value": self._PII_REPLACEMENTS["EMAIL_ADDRESS"]}
-                    ),
-                    "PHONE_NUMBER": OperatorConfig(
-                        "replace", {"new_value": self._PII_REPLACEMENTS["PHONE_NUMBER"]}
-                    ),
-                    "CREDIT_CARD": OperatorConfig(
-                        "replace", {"new_value": self._PII_REPLACEMENTS["CARD_NUMBER"]}
-                    ),
-                }
-                anonymized = self._anonymizer.anonymize(
-                    text=source,
-                    analyzer_results=analyzer_results,
-                    operators=operators,
-                )
-                sanitized_text = anonymized.text
-                presidio_entities = [
-                    {
-                        "entity_type": result.entity_type,
-                        "start": result.start,
-                        "end": result.end,
-                    }
-                    for result in analyzer_results
-                ]
-
-        regex_entities: list[dict[str, Any]] = []
-        for entity_type, pattern in self._PII_PATTERNS.items():
-            if entity_type == "ACCOUNT_NUMBER":
-                matches = list(pattern.finditer(sanitized_text))
-                if matches:
-                    regex_entities.extend(
-                        {
-                            "entity_type": entity_type,
-                            "start": match.start(),
-                            "end": match.end(),
-                        }
-                        for match in matches
-                    )
-                    sanitized_text = pattern.sub(
-                        lambda match: re.sub(
-                            r"\d{8,18}",
-                            self._PII_REPLACEMENTS[entity_type],
-                            match.group(0),
-                        ),
-                        sanitized_text,
-                    )
-                continue
-
-            matches = list(pattern.finditer(sanitized_text))
-            if matches:
-                regex_entities.extend(
-                    {
-                        "entity_type": entity_type,
-                        "start": match.start(),
-                        "end": match.end(),
-                    }
-                    for match in matches
-                )
-                sanitized_text = pattern.sub(self._PII_REPLACEMENTS[entity_type], sanitized_text)
-
-        all_entities = presidio_entities + regex_entities
         if all_entities:
-            grouped_types = sorted({item["entity_type"] for item in all_entities})
             violations.append(
                 {
                     "type": "pii_redaction",
-                    "entity_types": grouped_types,
-                    "count": len(all_entities),
+                    "entity_types": sorted(set(all_entities)),
+                    "count": total_count,
                 }
             )
-
         return sanitized_text, violations
-
-    def _setup_presidio(self) -> None:
-        if AnalyzerEngine is None or AnonymizerEngine is None or NlpEngineProvider is None:
-            return
-
-        try:
-            provider = NlpEngineProvider(
-                nlp_configuration={
-                    "nlp_engine_name": "spacy",
-                    "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
-                }
-            )
-            analyzer = AnalyzerEngine(
-                nlp_engine=provider.create_engine(),
-                supported_languages=["en"],
-            )
-            if Pattern is not None and PatternRecognizer is not None:
-                analyzer.registry.add_recognizer(
-                    PatternRecognizer(
-                        supported_entity="ACCOUNT_NUMBER",
-                        patterns=[
-                            Pattern(
-                                name="bank_account_number",
-                                regex=r"\b\d{8,18}\b",
-                                score=0.45,
-                            )
-                        ],
-                    )
-                )
-            self._analyzer = analyzer
-            self._anonymizer = AnonymizerEngine()
-        except Exception:
-            self._analyzer = None
-            self._anonymizer = None
 
     def _classify_scope(self, text: str) -> dict[str, str]:
         lowered = f" {text.lower()} "
@@ -363,6 +449,16 @@ class GuardrailsService:
         return {"label": "uncertain", "reason": "scope classifier could not determine request scope"}
 
     def _classify_scope_with_llm(self, text: str) -> str:
+        if self._scope_validator is not None:
+            try:
+                result = self._scope_validator.validate(text, {})
+                if isinstance(result, FailResult):
+                    return "off_topic"
+                if isinstance(result, PassResult):
+                    return "in_scope"
+            except Exception:
+                pass
+
         if not self._settings.groq_api_key:
             return "uncertain"
 
@@ -414,13 +510,6 @@ class GuardrailsService:
         except Exception:
             self._classifier_llm = None
         return self._classifier_llm
-
-    @staticmethod
-    def _find_matches(patterns: list[re.Pattern[str]], text: str) -> list[str]:
-        matches: list[str] = []
-        for pattern in patterns:
-            matches.extend(match.group(0) for match in pattern.finditer(text))
-        return sorted(set(matches))
 
 
 TracerLike = Tracer | NoOpTracer

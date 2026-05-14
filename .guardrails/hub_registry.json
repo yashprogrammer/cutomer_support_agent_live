@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "validators": {
+    "guardrails/detect_pii": {
+      "import_path": "guardrails_grhub_detect_pii",
+      "exports": [
+        "DetectPII"
+      ],
+      "installed_at": "2026-05-10T15:20:05.268721+00:00",
+      "package_name": "guardrails-grhub-detect-pii"
+    },
+    "guardrails/toxic_language": {
+      "import_path": "guardrails_grhub_toxic_language",
+      "exports": [
+        "ToxicLanguage"
+      ],
+      "installed_at": "2026-05-10T15:21:14.500574+00:00",
+      "package_name": "guardrails-grhub-toxic-language"
+    },
+    "tryolabs/restricttotopic": {
+      "import_path": "tryolabs_grhub_restricttotopic",
+      "exports": [
+        "RestrictToTopic"
+      ],
+      "installed_at": "2026-05-10T15:22:02.159671+00:00",
+      "package_name": "tryolabs-grhub-restricttotopic"
+    }
+  }
+}

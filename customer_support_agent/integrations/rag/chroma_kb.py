@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,15 @@ from chromadb.utils import embedding_functions
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from customer_support_agent.core.settings import Settings
+
+_EMBED_TRANSIENT_MARKERS = (
+    "ssl",
+    "eof occurred",
+    "connection reset",
+    "connection aborted",
+    "remotedisconnected",
+    "failed to generate embeddings",
+)
 
 
 class KnowledgeBaseService:
@@ -90,8 +100,8 @@ class KnowledgeBaseService:
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
         if self._collection.count() == 0:
             return []
-        
-        results = self._collection.query(
+
+        results = self._query_with_retry(
             query_texts=[query],
             n_results=top_k or self._settings.rag_top_k,
             include=["documents", "metadatas", "distances"],
@@ -109,8 +119,25 @@ class KnowledgeBaseService:
                 {
                     "content": document,
                     "source": metadata.get("source", "unknown"),
+                    "chunk_index": metadata.get("chunk_index"),
                     "distance": distance,
                 }
             )
 
         return combined
+
+    def _query_with_retry(self, **query_kwargs: Any) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                return self._collection.query(**query_kwargs)
+            except Exception as exc:
+                last_error = exc
+                lowered = str(exc).lower()
+                if not any(marker in lowered for marker in _EMBED_TRANSIENT_MARKERS) or attempt == 2:
+                    raise
+                time.sleep(1.5 * (2**attempt))
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Retry helper exited without a Chroma query result.")

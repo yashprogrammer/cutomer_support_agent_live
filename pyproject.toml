@@ -2,7 +2,7 @@
 name = "customer-support-agent"
 version = "0.1.0"
 description = "AI copilot for support agents with FastAPI, LangChain, Mem0, and ChromaDB"
-readme = "Plan.md"
+readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "fastapi",
@@ -19,6 +19,8 @@ dependencies = [
   "requests",
   "email-validator",
   "google-genai",
+  "guardrails-ai>=0.5",
+  "spacy>=3.7",
   # Optional local embedding stack (disabled to keep EC2 image size low):
   # "sentence-transformers",
   # "torch",
@@ -40,4 +42,17 @@ package = false
 dev = [
   "playwright>=1.58.0",
   "pytest",
+  "ragas>=0.2",
+  "deepeval>=1.0",
+  "rapidfuzz>=3.10",
+]
+
+[tool.pytest.ini_options]
+markers = [
+  "full_eval: marks the full RAG + agent evaluation suite",
+]
+filterwarnings = [
+  "ignore:Importing NonLLMContextPrecisionWithReference from 'ragas.metrics' is deprecated:DeprecationWarning",
+  "ignore:.*LangchainEmbeddingsWrapper is deprecated.*:DeprecationWarning",
+  "ignore:.*LangchainLLMWrapper is deprecated.*:DeprecationWarning",
 ]

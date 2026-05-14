@@ -25,5 +25,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Install spaCy model
+        run: uv run python -m spacy download en_core_web_sm
+
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run pytest tests -q
+
+      - name: Run guardrail and smoke eval tests
+        run: uv run pytest evals/test_guardrails.py evals/test_smoke_eval.py -q

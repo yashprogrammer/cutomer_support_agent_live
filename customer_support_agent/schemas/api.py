@@ -59,13 +59,17 @@ class StructuredDraftContext(BaseModel):
     memory_hits: list[dict[str, Any]] = Field(default_factory=list)
     knowledge_hits: list[dict[str, Any]] = Field(default_factory=list)
     tool_calls: list[DraftToolCall | dict[str, Any]] = Field(default_factory=list)
+    guardrail_outcomes: dict[str, Any] | None = None
     errors: list[str] = Field(default_factory=list)
 
 class DraftResponse(BaseModel):
     id: int
     ticket_id: int
     content: str
-    context_used: StructuredDraftContext | dict[str, Any] | None = None
+    context_used: StructuredDraftContext | dict[str, Any] | None = Field(
+        default=None,
+        description="Structured draft context, including optional guardrail_outcomes for input/output checks.",
+    )
     status: str
     created_at: str
 

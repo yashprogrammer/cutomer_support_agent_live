@@ -1,0 +1,3 @@
+interface:
+  display_name: "Multi-Agent Review Loop"
+  short_description: "Coordinate implementation workers and review agents in parallel"

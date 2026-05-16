@@ -53,4 +53,7 @@ def test_smoke_eval_live_groq(tmp_path: Path) -> None:
 
         trace_entries = load_trace_entries(settings)
         assert trace_entries, "Expected JSONL trace entries to be written."
-        assert any(entry["name"] in {"agent_invoke", "draft_fallback_invoke"} for entry in trace_entries)
+        assert any(
+            entry["name"] in {"agent_invoke", "draft_direct_invoke", "draft_fallback_invoke"}
+            for entry in trace_entries
+        )

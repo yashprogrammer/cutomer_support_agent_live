@@ -119,8 +119,6 @@ def render_context(context: dict[str, Any] | None) -> None:
     knowledge_hits = context.get("knowledge_hits") or []
     tool_calls = context.get("tool_calls") or []
     highlights = context.get("highlights") or {}
-    guardrail_outcomes = context.get("guardrail_outcomes") or {}
-
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Memory Hits", signals.get("memory_hit_count", len(memory_hits)))
@@ -137,24 +135,6 @@ def render_context(context: dict[str, Any] | None) -> None:
     sources = signals.get("knowledge_sources") or []
     if sources:
         st.caption(f"Knowledge sources: {', '.join(sources)}")
-
-    if guardrail_outcomes:
-        st.markdown("**Guardrails**")
-        for label, key in (("Input", "input"), ("Output", "output")):
-            outcome = guardrail_outcomes.get(key)
-            if not outcome:
-                continue
-            message = f"{label}: passed"
-            if outcome.get("pii_redacted"):
-                message += " with PII redaction"
-            if outcome.get("passed"):
-                st.success(message)
-            else:
-                st.warning(f"{label}: blocked and escalated")
-            violations = outcome.get("violations") or []
-            if violations:
-                with st.expander(f"{label} guardrail details"):
-                    st.json(outcome)
 
     if any(highlights.get(key) for key in ("memory", "knowledge", "tools")):
         st.markdown("**Highlights**")

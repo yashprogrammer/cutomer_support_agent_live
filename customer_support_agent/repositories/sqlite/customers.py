@@ -44,5 +44,5 @@ class CustomersRepository:
 
     def get_by_email(self, email:str)-> dict[str,Any] | None:
         with connect() as conn:
-            row = conn.execute("SELECT * FROM customers WHERE id = ?", (email,)).fetchone()
+            row = conn.execute("SELECT * FROM customers WHERE email = ?", (email,)).fetchone()
             return row_to_dict(row)

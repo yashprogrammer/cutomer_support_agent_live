@@ -59,17 +59,13 @@ class StructuredDraftContext(BaseModel):
     memory_hits: list[dict[str, Any]] = Field(default_factory=list)
     knowledge_hits: list[dict[str, Any]] = Field(default_factory=list)
     tool_calls: list[DraftToolCall | dict[str, Any]] = Field(default_factory=list)
-    guardrail_outcomes: dict[str, Any] | None = None
     errors: list[str] = Field(default_factory=list)
 
 class DraftResponse(BaseModel):
     id: int
     ticket_id: int
     content: str
-    context_used: StructuredDraftContext | dict[str, Any] | None = Field(
-        default=None,
-        description="Structured draft context, including optional guardrail_outcomes for input/output checks.",
-    )
+    context_used: StructuredDraftContext | dict[str, Any] | None = None
     status: str
     created_at: str
 
@@ -102,4 +98,5 @@ class CustomerMemorySearchResponse(BaseModel):
     customer_id: int
     customer_email: EmailStr
     query: str
+    results: list[dict[str, Any]] = Field(default_factory=list)
     results: list[dict[str, Any]]

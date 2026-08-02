@@ -77,6 +77,7 @@ class CustomerMemoryStore:
         if hasattr(self._memory, "get_all"):
             raw = self._memory.get_all(user_id=user_id)
             return self._normalize_results(raw, limit)
+        return []
 
     def add_interaction(
         self,

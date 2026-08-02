@@ -13,14 +13,13 @@ dependencies = [
   "langchain-core",
   "langchain-groq",
   "langchain-text-splitters",
+  "langgraph",
   "mem0ai",
   "chromadb",
   "streamlit",
   "requests",
   "email-validator",
   "google-genai",
-
-  "spacy>=3.7",
   # Optional local embedding stack (disabled to keep EC2 image size low):
   # "sentence-transformers",
   # "torch",
@@ -42,17 +41,4 @@ package = false
 dev = [
   "playwright>=1.58.0",
   "pytest",
-  "ragas>=0.2",
-  "deepeval>=1.0",
-  "rapidfuzz>=3.10",
-]
-
-[tool.pytest.ini_options]
-markers = [
-  "full_eval: marks the full RAG + agent evaluation suite",
-]
-filterwarnings = [
-  "ignore:Importing NonLLMContextPrecisionWithReference from 'ragas.metrics' is deprecated:DeprecationWarning",
-  "ignore:.*LangchainEmbeddingsWrapper is deprecated.*:DeprecationWarning",
-  "ignore:.*LangchainLLMWrapper is deprecated.*:DeprecationWarning",
 ]

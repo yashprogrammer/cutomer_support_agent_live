@@ -1,7 +1,6 @@
 services:
   api:
     build: .
-    container_name: support-copilot-api
     command: .venv/bin/python main.py
     ports:
       - "8000:8000"
@@ -12,7 +11,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-      start_period: 10s
+      start_period: 60s
     networks:
       default:
         aliases:
@@ -24,7 +23,6 @@ services:
 
   dashboard:
     build: .
-    container_name: support-copilot-dashboard
     command: .venv/bin/streamlit run app.py --server.address 0.0.0.0 --server.port 8501
     ports:
       - "8501:8501"
@@ -36,7 +34,10 @@ services:
       api:
         condition: service_healthy
     networks:
-      - default
+      default:
+        aliases:
+          - dashboard
+          - support-copilot-dashboard
     volumes:
       - ./data:/app/data
       - ./knowledge_base:/app/knowledge_base

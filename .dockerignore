@@ -1,0 +1,14 @@
+data/
+.venv/
+notebooks/
+.git/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.env
+*.md
+docs/
+tests/
+flow.excalidraw
+output.md
